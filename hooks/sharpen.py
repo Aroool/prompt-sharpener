@@ -40,6 +40,10 @@ CHITCHAT = re.compile(
     re.IGNORECASE,
 )
 
+# "make" is only vague as "make it/this/everything <goal>" ("make it
+# production ready"), not as a creation request ("make a login page").
+MAKE_VAGUE = re.compile(r"^(?:it|this|everything)\b", re.IGNORECASE)
+
 
 def main():
     data = json.load(sys.stdin)
@@ -54,7 +58,12 @@ def main():
     if any(pattern.search(prompt) for pattern in SPECIFIC):
         return
 
-    if not VAGUE.match(prompt):
+    match = VAGUE.match(prompt)
+    if not match:
+        return
+    verb = re.sub(r"\s+", " ", match.group("verb").lower())
+    rest = match.group("rest")
+    if verb == "make" and not MAKE_VAGUE.match(rest):
         return
 
     print(json.dumps({
