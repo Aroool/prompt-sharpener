@@ -44,6 +44,19 @@ CHITCHAT = re.compile(
 # production ready"), not as a creation request ("make a login page").
 MAKE_VAGUE = re.compile(r"^(?:it|this|everything)\b", re.IGNORECASE)
 
+FILLER_WORDS = {"the", "my", "our", "this", "that", "it", "up", "all", "some"}
+GENERIC_TARGETS = {"", "code", "codebase", "everything", "things", "stuff",
+                   "app", "project", "repo", "site", "website"}
+
+
+def extract_target(rest):
+    """Pull the object out of e.g. 'the navbar' -> 'navbar'."""
+    words = rest.strip().rstrip(".!,").split()
+    while words and words[0].lower() in FILLER_WORDS:
+        words.pop(0)
+    target = " ".join(words)
+    return None if target.lower() in GENERIC_TARGETS else target
+
 
 def main():
     data = json.load(sys.stdin)
