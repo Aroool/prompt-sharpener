@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """prompt-sharpener: UserPromptSubmit hook that blocks vague prompts."""
 
+import hashlib
 import json
+import os
 import re
 import sys
+import tempfile
 
 MAX_LEN = 120
 MAX_WORDS = 20
@@ -61,6 +64,17 @@ def extract_target(rest):
 BUG_VERBS = {"fix", "debug", "repair"}
 
 
+def valve_path(session_id):
+    return os.path.join(
+        tempfile.gettempdir(), "prompt-sharpener-%s.last" % session_id
+    )
+
+
+def digest(prompt):
+    normalized = " ".join(prompt.split()).lower()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def build_suggestion(verb, rest):
     target = extract_target(rest)
 
@@ -97,6 +111,7 @@ def build_suggestion(verb, rest):
 def main():
     data = json.load(sys.stdin)
     prompt = (data.get("prompt") or "").strip()
+    session_id = re.sub(r"[^\w-]", "", data.get("session_id") or "global")
 
     if not prompt or len(prompt) > MAX_LEN or len(prompt.split()) > MAX_WORDS:
         return
@@ -115,11 +130,26 @@ def main():
     if verb == "make" and not MAKE_VAGUE.match(rest):
         return
 
+    # Safety valve: identical resend of the last blocked prompt goes through.
+    state = valve_path(session_id)
+    fingerprint = digest(prompt)
+    try:
+        with open(state) as f:
+            if f.read().strip() == fingerprint:
+                os.remove(state)
+                return
+    except OSError:
+        pass
+
     reason = (
         "prompt-sharpener: that prompt is broad enough that Claude may guess "
         "at the scope. Sharper version — edit the [brackets], then send:\n\n"
-        "%s" % build_suggestion(verb, rest)
+        "%s\n\n"
+        "To send your original as-is, submit the exact same prompt again."
+        % build_suggestion(verb, rest)
     )
+    with open(state, "w") as f:
+        f.write(fingerprint)
     print(json.dumps({"decision": "block", "reason": reason}))
 
 
