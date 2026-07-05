@@ -32,12 +32,23 @@ SPECIFIC = [
     re.compile(r"\n"),                                  # multi-line = structured
 ]
 
+# Conversational replies mid-session — never nag on these.
+CHITCHAT = re.compile(
+    r"^(?:y|yes|yeah|yep|no|nope|ok(?:ay)?|k|sure|go(?:\s+ahead)?|do\s+it|"
+    r"proceed|continue|carry\s+on|keep\s+going|try\s+again|retry|thanks|"
+    r"thank\s+you|ty|lgtm|sounds\s+good|option\s+\d+|\d+)[\s.!]*$",
+    re.IGNORECASE,
+)
+
 
 def main():
     data = json.load(sys.stdin)
     prompt = (data.get("prompt") or "").strip()
 
     if not prompt or len(prompt) > MAX_LEN or len(prompt.split()) > MAX_WORDS:
+        return
+
+    if CHITCHAT.match(prompt):
         return
 
     if any(pattern.search(prompt) for pattern in SPECIFIC):
