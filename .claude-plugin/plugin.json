@@ -1,0 +1,8 @@
+{
+  "name": "prompt-sharpener",
+  "description": "Blocks vague prompts before Claude runs and suggests a sharper rewrite.",
+  "version": "0.0.1",
+  "author": {
+    "name": "Arulprashath"
+  }
+}
