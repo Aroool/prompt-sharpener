@@ -13,7 +13,7 @@ MAX_WORDS = 20
 
 VAGUE = re.compile(
     r"^(?:please\s+|pls\s+|can\s+you\s+|could\s+you\s+)?(?:just\s+)?"
-    r"(?P<verb>fix|debug|repair|clean\s*up|tidy(?:\s+up)?|improve|"
+    r"(?P<verb>fix|debug|repair|clean(?:\s*up)?|tidy(?:\s+up)?|improve|"
     r"optimi[sz]e|refactor|polish|speed\s+up|make)\b[\s,:]*(?P<rest>.*)$",
     re.IGNORECASE,
 )
