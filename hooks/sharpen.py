@@ -113,7 +113,9 @@ def main():
     prompt = (data.get("prompt") or "").strip()
     session_id = re.sub(r"[^\w-]", "", data.get("session_id") or "global")
 
-    if not prompt or len(prompt) > MAX_LEN or len(prompt.split()) > MAX_WORDS:
+    if not prompt or prompt[0] in "/!#":
+        return
+    if len(prompt) > MAX_LEN or len(prompt.split()) > MAX_WORDS:
         return
 
     if CHITCHAT.match(prompt):
@@ -154,4 +156,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        # A broken hook must never block real prompts.
+        sys.exit(0)
