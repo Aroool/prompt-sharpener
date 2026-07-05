@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""prompt-sharpener: UserPromptSubmit hook that blocks vague prompts."""
+"""prompt-sharpener: UserPromptSubmit hook.
+
+Blocks confidently-vague prompts and shows a sharper, ready-to-send rewrite
+as the block reason. Stays completely silent (exit 0, no output) otherwise.
+
+Safety valve: resubmitting the exact same prompt that was just blocked
+lets it through unchanged, so a false positive can never trap you.
+
+Stdlib only. No network. No config.
+"""
 
 import hashlib
 import json
