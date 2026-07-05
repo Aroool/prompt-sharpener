@@ -58,6 +58,42 @@ def extract_target(rest):
     return None if target.lower() in GENERIC_TARGETS else target
 
 
+BUG_VERBS = {"fix", "debug", "repair"}
+
+
+def build_suggestion(verb, rest):
+    target = extract_target(rest)
+
+    if verb == "make":
+        goal = target or "[the goal you have in mind]"
+        return (
+            "Audit the code we're working on against this goal: %s. "
+            "List what concretely falls short — specific files and issues — "
+            "before changing anything. Then fix only those items, no broad "
+            "rewrites. Run the relevant tests after." % goal
+        )
+
+    if verb in BUG_VERBS:
+        subject = ("The " + target) if target else "[the thing that's broken]"
+        area = ("the " + target) if target else "that area"
+        return (
+            "%s is misbehaving: [what you see vs. what you expected, and "
+            "where it happens]. First locate the code responsible and state "
+            "the root cause — don't edit anything until you've explained it. "
+            "Keep the fix scoped to the files directly involved, and if a "
+            "test covers %s, run it before and after." % (subject, area)
+        )
+
+    scope = ("the " + target) if target else "[the code you mean]"
+    return (
+        "Review %s and list the specific issues you find — [what I care "
+        "about: naming, dead code, duplication, error handling?]. Fix only "
+        "those issues, no broad rewrites, and limit changes to the files "
+        "that implement %s. If tests cover that area, run them after."
+        % (scope, scope)
+    )
+
+
 def main():
     data = json.load(sys.stdin)
     prompt = (data.get("prompt") or "").strip()
@@ -79,11 +115,12 @@ def main():
     if verb == "make" and not MAKE_VAGUE.match(rest):
         return
 
-    print(json.dumps({
-        "decision": "block",
-        "reason": "prompt-sharpener: that prompt looks broad. Add a file, "
-                  "an error message, or a specific detail, then resend.",
-    }))
+    reason = (
+        "prompt-sharpener: that prompt is broad enough that Claude may guess "
+        "at the scope. Sharper version — edit the [brackets], then send:\n\n"
+        "%s" % build_suggestion(verb, rest)
+    )
+    print(json.dumps({"decision": "block", "reason": reason}))
 
 
 if __name__ == "__main__":
