@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -73,6 +74,36 @@ def extract_target(rest):
 BUG_VERBS = {"fix", "debug", "repair"}
 
 
+def repo_files(cwd):
+    """Tracked + untracked-but-not-ignored files, or [] outside a git repo."""
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            cwd=cwd, capture_output=True, text=True, timeout=2,
+        )
+        if out.returncode != 0:
+            return []
+        return out.stdout.splitlines()[:50000]
+    except Exception:
+        return []
+
+
+def find_candidates(target, cwd, limit=3):
+    """Files in the repo whose name matches the prompt's target noun."""
+    tokens = {t for t in re.findall(r"[a-z0-9]+", (target or "").lower())
+              if len(t) >= 3}
+    if not tokens or not cwd or not os.path.isdir(cwd):
+        return []
+    scored = []
+    for path in repo_files(cwd):
+        base = os.path.basename(path).lower()
+        hits = sum(1 for t in tokens if t in base)
+        if hits:
+            scored.append((-hits, len(path), path))
+    scored.sort()
+    return [path for _, _, path in scored[:limit]]
+
+
 def valve_path(session_id):
     return os.path.join(
         tempfile.gettempdir(), "prompt-sharpener-%s.last" % session_id
@@ -84,8 +115,9 @@ def digest(prompt):
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def build_suggestion(verb, rest):
+def build_suggestion(verb, rest, cwd):
     target = extract_target(rest)
+    candidates = find_candidates(target, cwd)
 
     if verb == "make":
         goal = target or "[the goal you have in mind]"
@@ -99,21 +131,32 @@ def build_suggestion(verb, rest):
     if verb in BUG_VERBS:
         subject = ("The " + target) if target else "[the thing that's broken]"
         area = ("the " + target) if target else "that area"
+        if candidates:
+            locate = (
+                "Likely code: %s — confirm that's the right place and state "
+                "the root cause before editing anything."
+                % ", ".join(candidates)
+            )
+        else:
+            locate = (
+                "First locate the code responsible and state the root cause "
+                "— don't edit anything until you've explained it."
+            )
         return (
             "%s is misbehaving: [what you see vs. what you expected, and "
-            "where it happens]. First locate the code responsible and state "
-            "the root cause — don't edit anything until you've explained it. "
-            "Keep the fix scoped to the files directly involved, and if a "
-            "test covers %s, run it before and after." % (subject, area)
+            "where it happens]. %s Keep the fix scoped to the files "
+            "directly involved, and if a test covers %s, run it before "
+            "and after." % (subject, locate, area)
         )
 
     scope = ("the " + target) if target else "[the code you mean]"
+    where = (" (likely %s)" % ", ".join(candidates)) if candidates else ""
     return (
-        "Review %s and list the specific issues you find — [what I care "
+        "Review %s%s and list the specific issues you find — [what I care "
         "about: naming, dead code, duplication, error handling?]. Fix only "
         "those issues, no broad rewrites, and limit changes to the files "
         "that implement %s. If tests cover that area, run them after."
-        % (scope, scope)
+        % (scope, where, scope)
     )
 
 
@@ -121,6 +164,7 @@ def main():
     data = json.load(sys.stdin)
     prompt = (data.get("prompt") or "").strip()
     session_id = re.sub(r"[^\w-]", "", data.get("session_id") or "global")
+    cwd = data.get("cwd") or ""
 
     if not prompt or prompt[0] in "/!#":
         return
@@ -157,7 +201,7 @@ def main():
         "at the scope. Sharper version — edit the [brackets], then send:\n\n"
         "%s\n\n"
         "To send your original as-is, submit the exact same prompt again."
-        % build_suggestion(verb, rest)
+        % build_suggestion(verb, rest, cwd)
     )
     with open(state, "w") as f:
         f.write(fingerprint)
