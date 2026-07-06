@@ -3,8 +3,10 @@
 checks that the right prompts block and the right prompts pass silently."""
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import uuid
 
 SCRIPT = os.path.join(
@@ -49,12 +51,12 @@ PASS = [
 ]
 
 
-def run(prompt, session_id):
+def run(prompt, session_id, cwd="/tmp"):
     payload = json.dumps({
         "session_id": session_id,
         "prompt": prompt,
         "hook_event_name": "UserPromptSubmit",
-        "cwd": "/tmp",
+        "cwd": cwd,
     })
     result = subprocess.run(
         ["python3", SCRIPT], input=payload, capture_output=True, text=True
@@ -66,6 +68,57 @@ def run(prompt, session_id):
     parsed = json.loads(out)
     assert parsed.get("decision") == "block", "unexpected output for %r: %s" % (prompt, out)
     return parsed["reason"]
+
+
+def sid():
+    return "test-" + uuid.uuid4().hex[:8]
+
+
+def check_repo_aware(failures):
+    """Repo-aware rewrites: real file candidates and real test commands."""
+    # Node fixture: Navbar.tsx should be named, npm test should be suggested.
+    node = tempfile.mkdtemp(prefix="sharpener-node-")
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=node, check=True)
+        os.makedirs(os.path.join(node, "src", "components"))
+        for name in ("Navbar.tsx", "Footer.tsx"):
+            with open(os.path.join(node, "src", "components", name), "w") as f:
+                f.write("export {}\n")
+        with open(os.path.join(node, "package.json"), "w") as f:
+            json.dump({"scripts": {"test": "vitest run"}}, f)
+        reason = run("fix the navbar", sid(), cwd=node) or ""
+        if "src/components/Navbar.tsx" not in reason:
+            failures.append("repo-aware: should name Navbar.tsx")
+        if "Footer.tsx" in reason:
+            failures.append("repo-aware: Footer.tsx is not a match")
+        if "`npm test`" not in reason:
+            failures.append("repo-aware: should suggest npm test")
+    finally:
+        shutil.rmtree(node, ignore_errors=True)
+
+    # Python fixture: pytest detected, matching module named.
+    py = tempfile.mkdtemp(prefix="sharpener-py-")
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=py, check=True)
+        open(os.path.join(py, "pytest.ini"), "w").close()
+        with open(os.path.join(py, "auth.py"), "w") as f:
+            f.write("pass\n")
+        reason = run("refactor the auth code", sid(), cwd=py) or ""
+        if "auth.py" not in reason:
+            failures.append("repo-aware: should name auth.py")
+        if "`pytest`" not in reason:
+            failures.append("repo-aware: should suggest pytest")
+    finally:
+        shutil.rmtree(py, ignore_errors=True)
+
+    # Outside a git repo: fall back to the generic wording, never crash.
+    bare = tempfile.mkdtemp(prefix="sharpener-bare-")
+    try:
+        reason = run("fix the navbar", sid(), cwd=bare) or ""
+        if "locate the code responsible" not in reason:
+            failures.append("repo-aware: non-git cwd should use generic wording")
+    finally:
+        shutil.rmtree(bare, ignore_errors=True)
 
 
 def main():
@@ -103,13 +156,15 @@ def main():
     if r.returncode != 0 or r.stdout.strip():
         failures.append("malformed input should exit 0 silently")
 
+    check_repo_aware(failures)
+
     if failures:
         print("FAILURES:")
         for f in failures:
             print("  -", f)
         sys.exit(1)
 
-    print("All %d cases passed." % (len(BLOCK) + len(PASS) + 5))
+    print("All %d cases passed." % (len(BLOCK) + len(PASS) + 12))
 
 
 if __name__ == "__main__":
