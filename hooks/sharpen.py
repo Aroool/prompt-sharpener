@@ -104,6 +104,40 @@ def find_candidates(target, cwd, limit=3):
     return [path for _, _, path in scored[:limit]]
 
 
+def detect_test_command(cwd):
+    """The project's real test command, or None if we can't tell."""
+    def has(name):
+        return os.path.exists(os.path.join(cwd, name))
+
+    try:
+        if not cwd or not os.path.isdir(cwd):
+            return None
+        if has("package.json"):
+            with open(os.path.join(cwd, "package.json")) as f:
+                script = (json.load(f).get("scripts") or {}).get("test", "")
+            if script and "no test specified" not in script:
+                if has("pnpm-lock.yaml"):
+                    return "pnpm test"
+                if has("yarn.lock"):
+                    return "yarn test"
+                if has("bun.lockb") or has("bun.lock"):
+                    return "bun test"
+                return "npm test"
+        if has("pytest.ini") or has("conftest.py"):
+            return "pytest"
+        if has("pyproject.toml"):
+            with open(os.path.join(cwd, "pyproject.toml")) as f:
+                if "pytest" in f.read():
+                    return "pytest"
+        if has("Cargo.toml"):
+            return "cargo test"
+        if has("go.mod"):
+            return "go test ./..."
+    except Exception:
+        pass
+    return None
+
+
 def valve_path(session_id):
     return os.path.join(
         tempfile.gettempdir(), "prompt-sharpener-%s.last" % session_id
@@ -118,14 +152,17 @@ def digest(prompt):
 def build_suggestion(verb, rest, cwd):
     target = extract_target(rest)
     candidates = find_candidates(target, cwd)
+    test_cmd = detect_test_command(cwd)
 
     if verb == "make":
         goal = target or "[the goal you have in mind]"
+        tests = ("Run `%s` after." % test_cmd) if test_cmd \
+            else "Run the relevant tests after."
         return (
             "Audit the code we're working on against this goal: %s. "
             "List what concretely falls short — specific files and issues — "
             "before changing anything. Then fix only those items, no broad "
-            "rewrites. Run the relevant tests after." % goal
+            "rewrites. %s" % (goal, tests)
         )
 
     if verb in BUG_VERBS:
@@ -142,21 +179,23 @@ def build_suggestion(verb, rest, cwd):
                 "First locate the code responsible and state the root cause "
                 "— don't edit anything until you've explained it."
             )
+        tests = ("run `%s` before and after." % test_cmd) if test_cmd \
+            else "if a test covers %s, run it before and after." % area
         return (
             "%s is misbehaving: [what you see vs. what you expected, and "
             "where it happens]. %s Keep the fix scoped to the files "
-            "directly involved, and if a test covers %s, run it before "
-            "and after." % (subject, locate, area)
+            "directly involved, and %s" % (subject, locate, tests)
         )
 
     scope = ("the " + target) if target else "[the code you mean]"
     where = (" (likely %s)" % ", ".join(candidates)) if candidates else ""
+    tests = ("Run `%s` after." % test_cmd) if test_cmd \
+        else "If tests cover that area, run them after."
     return (
         "Review %s%s and list the specific issues you find — [what I care "
         "about: naming, dead code, duplication, error handling?]. Fix only "
         "those issues, no broad rewrites, and limit changes to the files "
-        "that implement %s. If tests cover that area, run them after."
-        % (scope, where, scope)
+        "that implement %s. %s" % (scope, where, scope, tests)
     )
 
 
