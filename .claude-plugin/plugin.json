@@ -1,7 +1,7 @@
 {
   "name": "prompt-sharpener",
   "description": "Catches vague prompts before Claude runs and shows a sharper version you can send instead. Silent unless it's confident the prompt is too broad.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Arulprashath"
   }

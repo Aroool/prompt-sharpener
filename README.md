@@ -20,6 +20,21 @@ no file, path, code reference, error name, or detail — it blocks the prompt
 You copy it, edit the `[brackets]`, and send. Your prompt is **never**
 rewritten silently — you always make the final send.
 
+### Repo-aware rewrites (v0.2)
+
+The suggestion is grounded in your actual project, not just a template:
+
+- **Real files**: "fix the navbar" becomes "Likely code:
+  `src/components/Navbar.tsx` — confirm that's the right place…" by matching
+  the target noun against `git ls-files` (fast, respects `.gitignore`, only
+  runs when a prompt is actually blocked).
+- **Real test command**: it detects `npm test` / `pnpm test` / `yarn test` /
+  `bun test` (from `package.json` + lockfile), `pytest`, `cargo test`, or
+  `go test ./...` and names that command instead of "if a test exists".
+
+Outside a git repo, or when nothing matches, it falls back to the generic
+wording. Still no API calls, no config, no state.
+
 **Safety valve:** if it flags a prompt you meant literally, just submit the
 exact same prompt again and it goes straight through.
 
